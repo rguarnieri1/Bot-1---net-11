@@ -32,7 +32,7 @@ public class BacktestService
     private readonly EmaRibbonTrendFollowingStrategy _strategy;
     private readonly decimal _initialCapital;
 
-    public BacktestService(decimal initialCapital, decimal maxTradeAmount, decimal rewardRiskRatio = 2.0m)
+    public BacktestService(decimal initialCapital, decimal rewardRiskRatio = 2.0m, decimal capitalPerTrade = decimal.MaxValue)
     {
         _initialCapital = initialCapital;
         _dataService = new CryptoDataService();
@@ -44,7 +44,7 @@ public class BacktestService
             maxPositionSizePercent: 0.10m,
             commissionsPercent: 0.25m,
             taxRate: TaxRate,
-            maxPositionValue: maxTradeAmount
+            maxPositionValue: capitalPerTrade
         );
     }
 

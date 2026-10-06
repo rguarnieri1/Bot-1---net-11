@@ -1,4 +1,5 @@
 using BotCripto.Services;
+using Newtonsoft.Json.Linq;
 
 Console.WriteLine(@"
 ╔════════════════════════════════════════════════════════╗
@@ -7,13 +8,14 @@ Console.WriteLine(@"
 ╚════════════════════════════════════════════════════════╝
 ");
 
-// Capitale totale e importo massimo per singolo trade (€), usati sia dal bot live sia dal backtest
-const decimal InitialCapital = 150m;
-const decimal MaxTradeAmount = 10m;
-// Timeframe delle candele: 12h ha dato i risultati migliori nei backtest (apr-set 2026 e ott 2025-mar 2026)
-const string Timeframe = "12h";
-// Take profit come multiplo della distanza dello stop: 3x è il valore migliore nel backtest 12h su 12 mesi
-const decimal RewardRiskRatio = 3.0m;
+// Capitale, timeframe e R:R sono letti da appsettings.json (TradingSettings / MarketMonitoring)
+var appSettings = JObject.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "appsettings.json")));
+var tradingSettings = appSettings["TradingSettings"] ?? throw new InvalidOperationException("appsettings.json: sezione TradingSettings mancante");
+var marketSettings = appSettings["MarketMonitoring"] ?? throw new InvalidOperationException("appsettings.json: sezione MarketMonitoring mancante");
+decimal InitialCapital = tradingSettings.Value<decimal?>("InitialCapital") ?? throw new InvalidOperationException("appsettings.json: InitialCapital mancante");
+decimal CapitalPerTrade = tradingSettings.Value<decimal?>("CapitalPerTrade") ?? decimal.MaxValue;
+decimal RewardRiskRatio =tradingSettings.Value<decimal?>("RewardRiskRatio") ?? throw new InvalidOperationException("appsettings.json: RewardRiskRatio mancante");
+string Timeframe = marketSettings.Value<string>("TimeframeForCandlesticks") ?? throw new InvalidOperationException("appsettings.json: TimeframeForCandlesticks mancante");
 
 // Check se è backtest mode
 var cmdArgs = Environment.GetCommandLineArgs();
@@ -72,7 +74,7 @@ else
 
 async Task RunLiveAsync()
 {
-    var scheduler = new BotSchedulerService(InitialCapital, MaxTradeAmount, Timeframe, RewardRiskRatio);
+    var scheduler = new BotSchedulerService(InitialCapital, Timeframe, RewardRiskRatio, CapitalPerTrade);
 
     Console.WriteLine("Strategia Principale Attiva:");
     Console.WriteLine("  ⭐ EMA Ribbon Trend Following + Candle Confirmation");
@@ -84,7 +86,7 @@ async Task RunLiveAsync()
     Console.WriteLine("  • Intervallo Monitoraggio: 30 minuti");
     Console.WriteLine("  • Max Crypto: 500");
     Console.WriteLine($"  • Risk per Trade: 2% (€{InitialCapital * 0.02m:F2})");
-    Console.WriteLine($"  • Importo massimo per trade: €{Math.Min(InitialCapital * 0.10m, MaxTradeAmount):F2}");
+    Console.WriteLine($"  • Importo massimo per trade: €{Math.Min(InitialCapital * 0.10m, CapitalPerTrade):F2}");
     Console.WriteLine($"  • Take profit: {RewardRiskRatio}x la distanza dello stop");
     Console.WriteLine("  • Report Settimanale: Lunedì 00:00");
     Console.WriteLine("  • Tracking Metriche: Ogni 10 cicli");
@@ -107,7 +109,7 @@ async Task RunRealBacktestAsync(DateTime startDate, DateTime endDate, string tim
 {
     Console.WriteLine($"\n🔍 MODALITA' BACKTEST SU DATI STORICI REALI ATTIVATA ({startDate:yyyy-MM-dd} → {endDate:yyyy-MM-dd}, {timeframe}, capitale €{capital:F2}, R:R {rewardRisk})\n");
 
-    var backtestService = new BacktestService(capital, MaxTradeAmount, rewardRisk);
+    var backtestService = new BacktestService(capital, rewardRisk, CapitalPerTrade);
 
     try
     {

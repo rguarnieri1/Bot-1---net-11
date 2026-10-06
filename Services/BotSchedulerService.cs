@@ -29,7 +29,7 @@ public class BotSchedulerService
     private int _tradesRecorded = 0;
     private readonly Dictionary<string, int> _cumulativeRejectionCounts = new();
 
-    public BotSchedulerService(decimal initialCapital, decimal maxTradeAmount, string timeframe, decimal rewardRiskRatio)
+    public BotSchedulerService(decimal initialCapital, string timeframe, decimal rewardRiskRatio, decimal capitalPerTrade = decimal.MaxValue)
     {
         _initialCapital = initialCapital;
         _timeframe = timeframe;
@@ -45,7 +45,7 @@ public class BotSchedulerService
             maxPositionSizePercent: 0.10m,    // Max 10% per trade
             commissionsPercent: 0.25m,        // 0.25% commissioni per lato
             taxRate: 0.26m,                   // 26% tasse
-            maxPositionValue: maxTradeAmount  // importo massimo per trade (€)
+            maxPositionValue: capitalPerTrade // importo massimo fisso per trade (€)
         );
 
         _currentAccountValue = initialCapital;
