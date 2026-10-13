@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using BotCripto.Models;
 using BotCripto.Strategies;
 
@@ -6,6 +7,7 @@ namespace BotCripto.Services;
 public class BotSchedulerService
 {
     private const int CandlesPerAnalysis = 300;  // stessa finestra del backtest
+    private const int MaxConcurrentFetches = 4;
     private const int MinCandlesForAnalysis = 60; // minimo richiesto dalla strategia
     // Un segnale viene valutato solo entro questo tempo dalla chiusura della candela (niente ingressi in ritardo)
     private static readonly TimeSpan SignalFreshness = TimeSpan.FromMinutes(30);
@@ -19,6 +21,10 @@ public class BotSchedulerService
     private Timer? _weeklyReportTimer;
     private bool _isRunning = false;
     private int _cycleRunning = 0;
+    private DateTime? _lastScannedCandle;
+    // Il controllo gira spesso rispetto alla chiusura delle candele: la finestra di freschezza (30 min) contiene più tick,
+    // così un tick in ritardo/saltato non fa perdere il segnale. La scansione dei simboli avviene una sola volta per candela.
+    private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(5);
 
     private readonly decimal _initialCapital;
     private readonly string _timeframe;
@@ -61,27 +67,32 @@ public class BotSchedulerService
 
         _isRunning = true;
         Console.WriteLine("\n🤖 Bot Cripto avviato! (paper trading: nessun ordine reale)");
-        Console.WriteLine($"📊 Monitoraggio ogni 30 minuti, candele {_timeframe}...\n");
+        Console.WriteLine($"📊 Monitoraggio ogni {CheckInterval.TotalMinutes:F0} minuti, candele {_timeframe}...\n");
 
         // Esegui il primo controllo immediatamente
         await CheckMarketAsync();
 
-        // Timer per il controllo ogni 30 minuti
+        // Timer di controllo periodico (stop/target dei trade aperti + ricerca segnali a candela chiusa)
         _marketCheckTimer = new Timer(
             async _ => await CheckMarketAsync(),
             null,
-            TimeSpan.FromMinutes(30),
-            TimeSpan.FromMinutes(30));
+            CheckInterval,
+            CheckInterval);
 
         // Timer per il report settimanale (ogni lunedì alle 00:00)
         var now = DateTime.UtcNow;
-        var nextMonday = now.AddDays((DayOfWeek.Monday - now.DayOfWeek + 7) % 7);
+        var daysToMonday = ((int)DayOfWeek.Monday - (int)now.DayOfWeek + 7) % 7;
+        var nextMonday = now.Date.AddDays(daysToMonday); // lunedì alle 00:00 UTC
         if (nextMonday <= now)
             nextMonday = nextMonday.AddDays(7);
 
         var timeUntilMonday = nextMonday - now;
         _weeklyReportTimer = new Timer(
-            _ => _reportingService.GenerateWeeklyReport(),
+            _ =>
+            {
+                try { _reportingService.GenerateWeeklyReport(); }
+                catch (Exception ex) { Console.WriteLine($"❌ Errore nel report settimanale: {ex.Message}"); }
+            },
             null,
             timeUntilMonday,
             TimeSpan.FromDays(7));
@@ -118,16 +129,22 @@ public class BotSchedulerService
             var now = DateTime.UtcNow;
             Console.WriteLine($"\n⏱️  Ciclo #{_checksPerformed} - {now:yyyy-MM-dd HH:mm:ss} UTC");
 
-            var candleCache = new Dictionary<string, List<Candle>>();
-            async Task<List<Candle>> GetCandlesCachedAsync(string symbol)
+            // Cache per ciclo; il download è limitato a poche richieste concorrenti
+            var candleCache = new ConcurrentDictionary<string, Task<List<Candle>>>();
+            using var fetchGate = new SemaphoreSlim(MaxConcurrentFetches);
+            async Task<List<Candle>> FetchCandlesAsync(string symbol)
             {
-                if (!candleCache.TryGetValue(symbol, out var cached))
+                await fetchGate.WaitAsync();
+                try
                 {
-                    cached = (await _dataService.GetCandlesAsync(symbol, _timeframe, CandlesPerAnalysis)).OrderBy(c => c.Time).ToList();
-                    candleCache[symbol] = cached;
+                    return (await _dataService.GetCandlesAsync(symbol, _timeframe, CandlesPerAnalysis)).OrderBy(c => c.Time).ToList();
                 }
-                return cached;
+                finally
+                {
+                    fetchGate.Release();
+                }
             }
+            Task<List<Candle>> GetCandlesCachedAsync(string symbol) => candleCache.GetOrAdd(symbol, FetchCandlesAsync);
 
             // 1) Paper trading: chiudi i trade aperti che hanno toccato stop loss o target
             int tradesClosed = await CloseTradesAtStopOrTargetAsync(GetCandlesCachedAsync);
@@ -154,7 +171,7 @@ public class BotSchedulerService
             var btcClosed = ClosedCandles(await GetCandlesCachedAsync("BTC"), now);
             var lastClosedTime = btcClosed.Count > 0 ? btcClosed.Last().Time : (DateTime?)null;
             var lastCloseEnd = lastClosedTime + _timeframeSpan;
-            bool newCandle = lastCloseEnd != null && now - lastCloseEnd.Value <= SignalFreshness;
+            bool newCandle = lastCloseEnd != null && now - lastCloseEnd.Value <= SignalFreshness && _lastScannedCandle != lastClosedTime;
 
             if (!newCandle)
             {
@@ -168,23 +185,30 @@ public class BotSchedulerService
                 Console.WriteLine($"🕯️  Candela {_timeframe} chiusa alle {lastCloseEnd:yyyy-MM-dd HH:mm} UTC: ricerca segnali");
                 Console.WriteLine($"₿ Regime BTC: {(btcBullish == null ? "sconosciuto (nessun segnale)" : btcBullish.Value ? "rialzista (solo long)" : "ribassista (solo short)")}");
 
+                _lastScannedCandle = lastClosedTime;
                 var cryptos = await _dataService.GetLargeCapCryptocurrenciesAsync();
                 Console.WriteLine($"📈 Analizzando {cryptos.Count} criptovalute (max 500 per performance)...");
 
                 var allTrades = _reportingService.GetAllTrades();
+                var openSymbols = openTrades.Select(t => t.Symbol).ToHashSet();
+                var registeredSignals = allTrades.Where(t => t.SignalCandleTime == lastClosedTime).Select(t => t.Symbol).ToHashSet();
+
+                // Scarica in parallelo (con limite) solo i simboli che verranno analizzati; gli errori emergono nel loop per simbolo
+                var toFetch = cryptos.Where(c => !openSymbols.Contains(c.Symbol) && !registeredSignals.Contains(c.Symbol)).Select(c => GetCandlesCachedAsync(c.Symbol)).ToList();
+                try { await Task.WhenAll(toFetch); } catch { /* gestito per simbolo più sotto */ }
                 var candidates = new List<(Cryptocurrency crypto, AnalysisResult analysis, List<Candle> candles)>();
 
                 foreach (var crypto in cryptos)
                 {
                     try
                     {
-                        if (openTrades.Any(t => t.Symbol == crypto.Symbol))
+                        if (openSymbols.Contains(crypto.Symbol))
                         {
                             CountRejection("Posizione già aperta sul simbolo");
                             continue;
                         }
 
-                        if (allTrades.Any(t => t.Symbol == crypto.Symbol && t.SignalCandleTime == lastClosedTime))
+                        if (registeredSignals.Contains(crypto.Symbol))
                         {
                             CountRejection("Segnale di questa candela già registrato");
                             continue;
@@ -210,9 +234,8 @@ public class BotSchedulerService
                         if (emaRibbonResult.IsSignal)
                             candidates.Add((crypto, emaRibbonResult, candles));
                         else
-                            CountRejection(ClassifyStrategyRejection(emaRibbonResult.Signal));
+                            CountRejection(RejectionLabel(emaRibbonResult.Rejection));
 
-                        await Task.Delay(50);
                     }
                     catch (Exception ex)
                     {
@@ -224,9 +247,12 @@ public class BotSchedulerService
                 foreach (var (crypto, emaRibbonResult, candles) in candidates.OrderByDescending(c => c.analysis.Indicators.GetValueOrDefault("SignalStrength")))
                 {
                     var isLong = emaRibbonResult.Signal.Contains("BUY");
+                    // Ingresso alla chiusura della candela del segnale (come nel backtest), non al prezzo live:
+                    // lo stop della strategia è calcolato su quella candela e i controlli stop/target partono dalla successiva.
+                    var entryPrice = candles.Last().Close;
                     var positionResult = _riskManager.CalculatePosition(
                         crypto.Symbol,
-                        crypto.CurrentPrice,
+                        entryPrice,
                         CalculateVolatility(candles),
                         openTrades,
                         _currentAccountValue,
@@ -237,13 +263,13 @@ public class BotSchedulerService
                     if (!positionResult.IsValid)
                     {
                         signalsFiltered++;
-                        CountRejection(ClassifyRiskRejection(positionResult.Reason));
+                        CountRejection(RejectionLabel(positionResult.Rejection));
                         continue;
                     }
 
                     // Niente leva: la posizione deve entrare nel capitale non ancora impegnato
                     var committed = openTrades.Sum(t => t.EntryPrice * t.PositionSize);
-                    if (committed + crypto.CurrentPrice * positionResult.PositionSize > _currentAccountValue)
+                    if (committed + entryPrice * positionResult.PositionSize > _currentAccountValue)
                     {
                         signalsFiltered++;
                         CountRejection("Capitale già impegnato");
@@ -260,7 +286,7 @@ public class BotSchedulerService
                     await _notificationService.SendNotificationAsync(emaRibbonResult);
                     openTrades.Add(_reportingService.RecordTrade(
                         crypto.Symbol,
-                        crypto.CurrentPrice,
+                        entryPrice,
                         "EMA Ribbon Trend Following (Primary)",
                         isLong,
                         positionResult.StopLossPrice,
@@ -348,9 +374,12 @@ public class BotSchedulerService
                     if (!hitStop && !hitTarget)
                         continue;
 
-                    var exitPrice = hitStop ? trade.StopLoss : trade.TargetPrice;
+                    // Gap oltre lo stop: l'uscita avviene all'apertura della candela, non al prezzo di stop
+                    var exitPrice = hitStop
+                        ? (trade.IsLong ? Math.Min(candle.Open, trade.StopLoss) : Math.Max(candle.Open, trade.StopLoss))
+                        : trade.TargetPrice;
                     var profitCalc = _riskManager.CalculateProfitAndTaxes(
-                        trade.EntryPrice, exitPrice, trade.PositionSize, !hitStop, trade.IsLong);
+                        trade.EntryPrice, exitPrice, trade.PositionSize, trade.IsLong);
                     var profit = profitCalc.NetProfitBeforeTax; // tasse sul saldo netto del periodo, non per trade
                     var profitPercent = profit / (trade.EntryPrice * trade.PositionSize) * 100;
 
@@ -369,43 +398,24 @@ public class BotSchedulerService
         return closed;
     }
 
-    // Raggruppa i motivi di scarto della strategia in categorie leggibili per la diagnostica.
-    private static string ClassifyStrategyRejection(string signal)
+    // Etichette leggibili per la diagnostica dei motivi di scarto.
+    private static string RejectionLabel(RejectionReason reason) => reason switch
     {
-        if (signal.Contains("EMA Ribbon not aligned"))
-            return "Strategia: trend non allineato (EMA5/10/20/30)";
-        if (signal.Contains("Volume insufficient"))
-            return "Strategia: volume insufficiente";
-        if (signal.Contains("candle not"))
-            return "Strategia: candela non abbastanza forte";
-        if (signal.Contains("below EMA10") || signal.Contains("above EMA10"))
-            return "Strategia: prezzo non conferma vs EMA10";
-        if (signal.Contains("RSI"))
-            return "Strategia: RSI estremo";
-        if (signal.Contains("EMA breakout"))
-            return "Strategia: nessun breakout EMA confermato";
-        if (signal.Contains("BTC regime"))
-            return "Strategia: contro il regime BTC";
-        if (signal.Contains("No volume data"))
-            return "Strategia: volume assente";
-        if (signal == "No Signal")
-            return "Strategia: dati insufficienti per il calcolo";
-        return $"Strategia: altro ({signal})";
-    }
-
-    // Raggruppa i motivi di scarto del RiskManager in categorie leggibili per la diagnostica.
-    private static string ClassifyRiskRejection(string reason)
-    {
-        if (reason.Contains("Max concurrent trades"))
-            return "Risk Manager: troppi trade aperti simultaneamente";
-        if (reason.Contains("profit"))
-            return "Risk Manager: profitto non copre commissioni";
-        if (reason.Contains("Risk-reward"))
-            return "Risk Manager: rapporto rischio/rendimento insufficiente";
-        if (reason.Contains("Stop loss"))
-            return "Risk Manager: errore calcolo stop loss";
-        return $"Risk Manager: altro ({reason})";
-    }
+        RejectionReason.InsufficientData => "Strategia: dati insufficienti per il calcolo",
+        RejectionReason.TrendNotAligned => "Strategia: trend non allineato (EMA5/10/20/30)",
+        RejectionReason.NoVolumeData => "Strategia: volume assente",
+        RejectionReason.VolumeInsufficient => "Strategia: volume insufficiente",
+        RejectionReason.CandleNotStrong => "Strategia: candela non abbastanza forte",
+        RejectionReason.PriceVsEma10 => "Strategia: prezzo non conferma vs EMA10",
+        RejectionReason.RsiExtreme => "Strategia: RSI estremo",
+        RejectionReason.NoBreakout => "Strategia: nessun breakout EMA confermato",
+        RejectionReason.AgainstBtcRegime => "Strategia: contro il regime BTC",
+        RejectionReason.MaxConcurrentTrades => "Risk Manager: troppi trade aperti simultaneamente",
+        RejectionReason.ProfitBelowCommissions => "Risk Manager: profitto non copre commissioni",
+        RejectionReason.RiskRewardTooLow => "Risk Manager: rapporto rischio/rendimento insufficiente",
+        RejectionReason.StopLossError => "Risk Manager: errore calcolo stop loss",
+        _ => "Scarto non classificato"
+    };
 
     private decimal CalculateVolatility(List<Candle> candles)
     {

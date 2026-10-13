@@ -20,8 +20,28 @@ public class Candle
     public decimal Volume { get; set; }
 }
 
+// Motivo tipizzato di scarto di un segnale (strategia o risk manager): evita di parsare i testi di Signal/Reason.
+public enum RejectionReason
+{
+    None,
+    InsufficientData,
+    TrendNotAligned,
+    NoVolumeData,
+    VolumeInsufficient,
+    CandleNotStrong,
+    PriceVsEma10,
+    RsiExtreme,
+    NoBreakout,
+    AgainstBtcRegime,
+    MaxConcurrentTrades,
+    ProfitBelowCommissions,
+    RiskRewardTooLow,
+    StopLossError
+}
+
 public class AnalysisResult
 {
+    public RejectionReason Rejection { get; set; }
     public string Symbol { get; set; }
     public string StrategyName { get; set; }
     public bool IsSignal { get; set; }

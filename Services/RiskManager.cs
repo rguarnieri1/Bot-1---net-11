@@ -59,6 +59,7 @@ public class RiskManager
         if (riskPerUnit <= 0)
         {
             result.Reason = "Stop loss calculation error";
+            result.Rejection = RejectionReason.StopLossError;
             return result;
         }
 
@@ -86,11 +87,12 @@ public class RiskManager
         if (openTrades.Count >= MaxConcurrentTrades)
         {
             result.Reason = $"Max concurrent trades reached: {openTrades.Count} >= {MaxConcurrentTrades}";
+            result.Rejection = RejectionReason.MaxConcurrentTrades;
             return result;
         }
 
         // Esposizione totale (indicatore informativo, non blocca più il trade)
-        var totalExposure = openTrades.Sum(t => t.EntryPrice * 1) + positionSize;
+        var totalExposure = openTrades.Sum(t => t.EntryPrice * t.PositionSize) + positionSize * entryPrice;
         var leverageRatio = totalExposure / currentAccountValue;
 
         // 6️⃣ Verifica che il profitto atteso copra commissioni
@@ -101,6 +103,7 @@ public class RiskManager
         if (netProfit <= 0)
         {
             result.Reason = "Expected profit doesn't cover commissions";
+            result.Rejection = RejectionReason.ProfitBelowCommissions;
             return result;
         }
 
@@ -111,6 +114,7 @@ public class RiskManager
         if (riskRewardRatio < 1.2m)
         {
             result.Reason = $"Risk-reward too low: {riskRewardRatio:F2} < 1.2 required";
+            result.Rejection = RejectionReason.RiskRewardTooLow;
             return result;
         }
 
@@ -135,7 +139,6 @@ public class RiskManager
         decimal entryPrice,
         decimal exitPrice,
         decimal positionSize,
-        bool isWinningTrade,
         bool isLong = true)
     {
         var result = new ProfitCalculation();
@@ -197,7 +200,7 @@ public class RiskManager
         metrics.TotalProfit = closedTrades.Sum(t => t.Profit ?? 0);
         metrics.TotalCommissions = closedTrades.Sum(t =>
         {
-            var commissions = (t.EntryPrice * 1 * _commissionsPercent / 100) * 2;
+            var commissions = (t.EntryPrice * t.PositionSize * _commissionsPercent / 100) * 2;
             return commissions;
         });
 
@@ -259,6 +262,7 @@ public class RiskManager
 // Data classes
 public class PositionSizingResult
 {
+    public RejectionReason Rejection { get; set; }
     public string Symbol { get; set; }
     public decimal EntryPrice { get; set; }
     public bool IsValid { get; set; }

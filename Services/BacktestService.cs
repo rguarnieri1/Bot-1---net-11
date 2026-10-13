@@ -128,7 +128,7 @@ public class BacktestService
         {
             var pos = openPositions[symbol];
             var profitCalc = _riskManager.CalculateProfitAndTaxes(
-                pos.Trade.EntryPrice, exitPrice, pos.Size, isWin, pos.IsLong);
+                pos.Trade.EntryPrice, exitPrice, pos.Size, pos.IsLong);
 
             pos.Trade.ExitPrice = exitPrice;
             pos.Trade.CloseTime = time;
@@ -241,7 +241,7 @@ public class BacktestService
             {
                 var candles = candlesBySymbol[symbol];
                 var lastClose = candles.LastOrDefault(c => c.Time <= time)?.Close ?? pos.Trade.EntryPrice;
-                unrealized += _riskManager.CalculateProfitAndTaxes(pos.Trade.EntryPrice, lastClose, pos.Size, false, pos.IsLong).NetProfitBeforeTax;
+                unrealized += _riskManager.CalculateProfitAndTaxes(pos.Trade.EntryPrice, lastClose, pos.Size, pos.IsLong).NetProfitBeforeTax;
             }
             var markedEquity = _initialCapital + realizedPnl + unrealized;
             peakEquity = Math.Max(peakEquity, markedEquity);
