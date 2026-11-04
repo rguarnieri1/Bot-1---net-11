@@ -6,7 +6,7 @@
     "mode": "Conservative Trading"
   },
   "account": {
-    "initialCapital": 150,
+    "initialCapital": "illimitato",
     "riskPerTrade": 0.01,
     "maxPositionSize": 0.10,
     "maxLeverage": 1.5,
