@@ -252,10 +252,15 @@ public class BotSchedulerService
                         emaRibbonResult.Indicators.GetValueOrDefault("StopLoss")
                     );
 
+                    var signalRecord = SignalRecord.FromAnalysis(emaRibbonResult, _timeframe, lastClosedTime!.Value, entryPrice, isLong);
+
                     if (!positionResult.IsValid)
                     {
                         signalsFiltered++;
                         CountRejection(RejectionLabel(positionResult.Rejection));
+                        signalRecord.Accepted = false;
+                        signalRecord.RejectionReason = RejectionLabel(positionResult.Rejection);
+                        _reportingService.SaveSignal(signalRecord);
                         continue;
                     }
 
@@ -266,7 +271,7 @@ public class BotSchedulerService
                     emaRibbonResult.Indicators["ExpectedProfit"] = positionResult.ExpectedProfit;
 
                     await _notificationService.SendNotificationAsync(emaRibbonResult);
-                    openTrades.Add(_reportingService.RecordTrade(
+                    var trade = _reportingService.RecordTrade(
                         crypto.Symbol,
                         entryPrice,
                         "EMA Ribbon Trend Following (Primary)",
@@ -274,7 +279,17 @@ public class BotSchedulerService
                         positionResult.StopLossPrice,
                         positionResult.TargetPrice,
                         positionResult.PositionSize,
-                        lastClosedTime!.Value));
+                        lastClosedTime!.Value);
+                    openTrades.Add(trade);
+
+                    signalRecord.Accepted = true;
+                    signalRecord.StopLoss = positionResult.StopLossPrice;
+                    signalRecord.Target = positionResult.TargetPrice;
+                    signalRecord.PositionSize = positionResult.PositionSize;
+                    signalRecord.RiskRewardRatio = positionResult.RiskRewardRatio;
+                    signalRecord.ExpectedProfit = positionResult.ExpectedProfit;
+                    signalRecord.TradeId = trade.Id;
+                    _reportingService.SaveSignal(signalRecord);
 
                     _signalsGenerated++;
                     _tradesRecorded++;

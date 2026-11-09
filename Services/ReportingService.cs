@@ -279,4 +279,22 @@ public class ReportingService
     }
 
     public List<Trade> GetAllTrades() => _trades;
+
+    // Salva un segnale nella tabella bot1.Signals (solo con il database attivo)
+    public void SaveSignal(SignalRecord signal)
+    {
+        if (!_useDatabase)
+            return;
+
+        try
+        {
+            using var db = BotDatabase.CreateContext();
+            db.Signals.Add(signal);
+            db.SaveChanges();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️  Errore nel salvataggio del segnale {signal.Symbol} nel database: {ex.GetBaseException().Message}");
+        }
+    }
 }
