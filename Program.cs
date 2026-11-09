@@ -1,3 +1,4 @@
+using BotCripto.Data;
 using BotCripto.Services;
 using Newtonsoft.Json.Linq;
 
@@ -25,6 +26,10 @@ Console.WriteLine(@"
 ║                 Backtest + Live Trading                ║
 ╚════════════════════════════════════════════════════════╝
 ");
+
+// All'avvio apre la connessione a SQL Server (database "bot"); nel log scrive solo se si è connesso.
+// Se il database non è raggiungibile il bot continua usando Data/trades.json.
+BotDatabase.Initialize();
 
 // Importo per trade, timeframe e R:R sono letti da appsettings.json (TradingSettings / MarketMonitoring).
 // Nessun importo totale investibile: il capitale disponibile è illimitato.
