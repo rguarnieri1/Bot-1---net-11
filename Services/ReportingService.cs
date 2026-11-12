@@ -55,7 +55,6 @@ public class ReportingService
         trade.ProfitPercentage = profitPercentage;
         trade.ExitReason = exitReason;
         SaveTrades(trade);
-        LogClosedTrade(trade);
     }
 
     public Task CloseTradeAsync(string symbol, decimal exitPrice)
@@ -69,47 +68,9 @@ public class ReportingService
             trade.Profit = exitPrice - trade.EntryPrice;
             trade.ProfitPercentage = (trade.Profit.Value / trade.EntryPrice) * 100;
             SaveTrades(trade);
-            LogClosedTrade(trade);
         }
 
         return Task.CompletedTask;
-    }
-
-    private void LogClosedTrade(Trade trade)
-    {
-        try
-        {
-            var logsDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
-            Directory.CreateDirectory(logsDirectory);
-
-            var logFilePath = Path.Combine(logsDirectory, "Operazioni_chiuse.log");
-
-            var logEntry = new StringBuilder();
-            logEntry.AppendLine($"\n{'═'} OPERAZIONE CHIUSA - {trade.CloseTime:yyyy-MM-dd HH:mm:ss} {'═'}");
-            logEntry.AppendLine($"Simbolo: {trade.Symbol}");
-            logEntry.AppendLine($"Strategia: {trade.Strategy}");
-            if (trade.IsPaperManaged)
-            {
-                logEntry.AppendLine($"Direzione: {(trade.IsLong ? "LONG" : "SHORT")} (paper trading)");
-                logEntry.AppendLine($"Stop Loss: ${trade.StopLoss:F8} | Target: ${trade.TargetPrice:F8}");
-                logEntry.AppendLine($"Motivo uscita: {trade.ExitReason}");
-            }
-            logEntry.AppendLine($"Prezzo Entrata: ${trade.EntryPrice:F8}");
-            logEntry.AppendLine($"Prezzo Uscita: ${trade.ExitPrice:F8}");
-            logEntry.AppendLine($"Profitto: {trade.Profit:F8}");
-            logEntry.AppendLine($"Percentuale: {trade.ProfitPercentage:F2}%");
-            logEntry.AppendLine($"Stato: {trade.Status}");
-            logEntry.AppendLine($"Apertura: {trade.OpenTime:yyyy-MM-dd HH:mm:ss}");
-            logEntry.AppendLine($"Chiusura: {trade.CloseTime:yyyy-MM-dd HH:mm:ss}");
-            logEntry.AppendLine($"ID: {trade.Id}");
-            logEntry.AppendLine(new string('═', 60));
-
-            File.AppendAllText(logFilePath, logEntry.ToString());
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"⚠️ Errore nel salvataggio del log di chiusura: {ex.Message}");
-        }
     }
 
     public void GenerateWeeklyReport()
@@ -202,7 +163,7 @@ public class ReportingService
         }
     }
 
-    // Con il database attivo le operazioni si leggono da SQL Server (bot1.Trades); al primo avvio
+    // Con il database attivo le operazioni si leggono da SQL Server (bot1.bot1_trades); al primo avvio
     // la tabella vuota viene popolata con le operazioni già presenti in Data/trades.json.
     private void LoadTrades()
     {
@@ -280,7 +241,7 @@ public class ReportingService
 
     public List<Trade> GetAllTrades() => _trades;
 
-    // Salva un segnale nella tabella bot1.Signals (solo con il database attivo)
+    // Salva un segnale nella tabella bot1.bot1_signals (solo con il database attivo)
     public void SaveSignal(SignalRecord signal)
     {
         if (!_useDatabase)
