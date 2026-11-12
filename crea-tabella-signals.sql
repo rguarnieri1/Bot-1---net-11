@@ -1,4 +1,4 @@
--- Tabella bot1.Signals del Bot 1: un record per ogni segnale valido della strategia EMA Ribbon
+-- Tabella bot1.bot1_signals del Bot 1: un record per ogni segnale valido della strategia EMA Ribbon
 -- calcolato sulle candele scaricate da crypto.com (AnalysisResult con IsSignal = true),
 -- con gli indicatori della strategia e l'esito del Risk Manager. Non fa nulla se la tabella esiste già.
 IF DB_ID(N'bot') IS NULL
@@ -9,9 +9,9 @@ GO
 IF SCHEMA_ID(N'bot1') IS NULL
     EXEC(N'CREATE SCHEMA [bot1]');
 GO
-IF OBJECT_ID(N'bot1.Signals', N'U') IS NULL
+IF OBJECT_ID(N'bot1.bot1_signals', N'U') IS NULL
 BEGIN
-    CREATE TABLE [bot1].[Signals] (
+    CREATE TABLE [bot1].[bot1_signals] (
         [Id]                 bigint IDENTITY(1,1) NOT NULL,
         [Symbol]             nvarchar(50)    NOT NULL,
         [Strategy]           nvarchar(200)   NULL,   -- StrategyName
@@ -41,13 +41,13 @@ BEGIN
         [PositionSize]       decimal(38, 18) NULL,
         [RiskRewardRatio]    decimal(38, 18) NULL,
         [ExpectedProfit]     decimal(38, 18) NULL,
-        [TradeId]            nvarchar(36)    NULL,   -- bot1.Trades.Id del trade aperto dal segnale
+        [TradeId]            nvarchar(36)    NULL,   -- bot1.bot1_trades.Id del trade aperto dal segnale
         [Bot]                nvarchar(50)    NOT NULL CONSTRAINT [DF_Signals_Bot] DEFAULT (N'Bot 1'), -- bot che ha scritto la riga
         CONSTRAINT [PK_Signals] PRIMARY KEY ([Id])
     );
-    CREATE INDEX [IX_Signals_Symbol_SignalCandleTime] ON [bot1].[Signals] ([Symbol], [SignalCandleTime]);
-    PRINT 'Tabella bot1.Signals creata';
+    CREATE INDEX [IX_Signals_Symbol_SignalCandleTime] ON [bot1].[bot1_signals] ([Symbol], [SignalCandleTime]);
+    PRINT 'Tabella bot1.bot1_signals creata';
 END
 ELSE
-    PRINT 'Tabella bot1.Signals gia esistente: nessuna modifica';
+    PRINT 'Tabella bot1.bot1_signals gia esistente: nessuna modifica';
 GO

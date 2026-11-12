@@ -12,7 +12,7 @@ try {
         $cmd = $conn.CreateCommand(); $cmd.CommandText = $b; [void]$cmd.ExecuteNonQuery()
     }
     $cmd = $conn.CreateCommand()
-    $cmd.CommandText = "SELECT c.name + ' ' + t.name FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID(N'bot1.Cycles') ORDER BY c.column_id"
+    $cmd.CommandText = "SELECT c.name + ' ' + t.name FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID(N'bot1.bot1_cycles') ORDER BY c.column_id"
     $r = $cmd.ExecuteReader(); "Colonne:" | Out-File $log -Append -Encoding utf8
     while ($r.Read()) { "  " + $r.GetString(0) | Out-File $log -Append -Encoding utf8 }
     $r.Close(); $conn.Close()

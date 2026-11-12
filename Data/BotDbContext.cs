@@ -9,7 +9,7 @@ public class BotDbContext : DbContext
 {
     public const string Schema = "bot1";
 
-    // Valore fisso della colonna Bot nelle tabelle bot1.Trades, bot1.Signals e bot1.Cycles
+    // Valore fisso della colonna Bot nelle tabelle bot1.bot1_trades, bot1.bot1_signals e bot1.bot1_cycles
     public const string BotName = "Bot 1";
 
     private readonly string _connectionString;
@@ -45,7 +45,7 @@ public class BotDbContext : DbContext
 
         modelBuilder.Entity<Trade>(e =>
         {
-            e.ToTable("Trades");
+            e.ToTable("bot1_trades");
             e.HasKey(t => t.Id);
             e.Property(t => t.Id).HasMaxLength(36);
             e.Property(t => t.Symbol).HasMaxLength(50).IsRequired(false);
@@ -66,7 +66,7 @@ public class BotDbContext : DbContext
 
         modelBuilder.Entity<SignalRecord>(e =>
         {
-            e.ToTable("Signals");
+            e.ToTable("bot1_signals");
             e.HasKey(s => s.Id);
             e.Property(s => s.Id).UseIdentityColumn();
             e.Property(s => s.Symbol).HasMaxLength(50);

@@ -1,4 +1,4 @@
--- Tabella bot1.Cycles del Bot 1: un record per ogni ciclo di controllo del mercato (CheckMarketAsync),
+-- Tabella bot1.bot1_cycles del Bot 1: un record per ogni ciclo di controllo del mercato (CheckMarketAsync),
 -- con gli stessi dati del report "Ciclo completato" scritto in Logs/cycles_yyyy-MM-dd.log.
 -- Non fa nulla se la tabella esiste gia.
 IF DB_ID(N'bot') IS NULL
@@ -9,9 +9,9 @@ GO
 IF SCHEMA_ID(N'bot1') IS NULL
     EXEC(N'CREATE SCHEMA [bot1]');
 GO
-IF OBJECT_ID(N'bot1.Cycles', N'U') IS NULL
+IF OBJECT_ID(N'bot1.bot1_cycles', N'U') IS NULL
 BEGIN
-    CREATE TABLE [bot1].[Cycles] (
+    CREATE TABLE [bot1].[bot1_cycles] (
         [Id]               bigint IDENTITY(1,1) NOT NULL,
         [CycleNumber]      int             NOT NULL, -- "Ciclo #N" (riparte da 1 a ogni avvio del bot)
         [StartTime]        datetime2       NOT NULL, -- inizio del ciclo (UTC)
@@ -32,9 +32,9 @@ BEGIN
         [Bot]                nvarchar(50)    NOT NULL CONSTRAINT [DF_Cycles_Bot] DEFAULT (N'Bot 1'), -- bot che ha scritto la riga
         CONSTRAINT [PK_Cycles] PRIMARY KEY ([Id])
     );
-    CREATE INDEX [IX_Cycles_StartTime] ON [bot1].[Cycles] ([StartTime]);
-    PRINT 'Tabella bot1.Cycles creata';
+    CREATE INDEX [IX_Cycles_StartTime] ON [bot1].[bot1_cycles] ([StartTime]);
+    PRINT 'Tabella bot1.bot1_cycles creata';
 END
 ELSE
-    PRINT 'Tabella bot1.Cycles gia esistente: nessuna modifica';
+    PRINT 'Tabella bot1.bot1_cycles gia esistente: nessuna modifica';
 GO
