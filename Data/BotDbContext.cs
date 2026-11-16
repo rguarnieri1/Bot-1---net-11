@@ -9,7 +9,8 @@ public class BotDbContext : DbContext
 {
     public const string Schema = "bot1";
 
-    // Valore fisso della colonna Bot nelle tabelle bot1.bot1_trades, bot1.bot1_signals e bot1.bot1_cycles
+    // Valore fisso della colonna Bot nelle tabelle bot1.bot1_trades, bot1.bot1_signals, bot1.bot1_cycles
+    // e bot1.bot1_operazioni_chiuse
     public const string BotName = "Bot 1";
 
     private readonly string _connectionString;
@@ -21,6 +22,8 @@ public class BotDbContext : DbContext
 
     public DbSet<Trade> Trades => Set<Trade>();
     public DbSet<SignalRecord> Signals => Set<SignalRecord>();
+    public DbSet<ClosedTradeRecord> ClosedTrades => Set<ClosedTradeRecord>();
+    public DbSet<CycleRecord> Cycles => Set<CycleRecord>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -82,6 +85,40 @@ public class BotDbContext : DbContext
 
             e.Property<string>(BotColumn).HasMaxLength(50).IsRequired();
             e.HasIndex(s => new { s.Symbol, s.SignalCandleTime });
+        });
+
+        // Tabella creata con crea-tabella-operazioni-chiuse.sql
+        modelBuilder.Entity<ClosedTradeRecord>(e =>
+        {
+            e.ToTable("bot1_operazioni_chiuse");
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Id).UseIdentityColumn();
+            e.Property(c => c.TradeId).HasMaxLength(36);
+            e.Property(c => c.Symbol).HasMaxLength(50);
+            e.Property(c => c.Strategy).HasMaxLength(200);
+            e.Property(c => c.ExitReason).HasMaxLength(100);
+            e.Property(c => c.Status).HasMaxLength(20);
+
+            foreach (var p in typeof(ClosedTradeRecord).GetProperties()
+                         .Where(p => p.PropertyType == typeof(decimal) || p.PropertyType == typeof(decimal?)))
+                e.Property(p.Name).HasPrecision(38, 18);
+
+            e.Property<string>(BotColumn).HasMaxLength(50).IsRequired();
+            e.HasIndex(c => c.TradeId).IsUnique();
+        });
+
+        // Tabella creata con crea-tabella-cycles.sql
+        modelBuilder.Entity<CycleRecord>(e =>
+        {
+            e.ToTable("bot1_cycles");
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Id).UseIdentityColumn();
+            e.Property(c => c.Timeframe).HasMaxLength(10);
+            e.Property(c => c.BtcRegime).HasMaxLength(20);
+            e.Property(c => c.CapitalCommitted).HasPrecision(38, 18);
+            e.Property(c => c.RealizedPnl).HasPrecision(38, 18);
+            e.Property<string>(BotColumn).HasMaxLength(50).IsRequired();
+            e.HasIndex(c => c.StartTime);
         });
     }
 }

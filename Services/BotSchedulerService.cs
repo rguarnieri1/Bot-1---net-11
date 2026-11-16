@@ -117,10 +117,12 @@ public class BotSchedulerService
             return;
         }
 
+        CycleRecord? cycle = null;
         try
         {
             _checksPerformed++;
             var now = DateTime.UtcNow;
+            cycle = new CycleRecord { CycleNumber = _checksPerformed, StartTime = now, Timeframe = _timeframe };
             Console.WriteLine($"\n⏱️  Ciclo #{_checksPerformed} - {now:yyyy-MM-dd HH:mm:ss} UTC");
 
             // Cache per ciclo; il download è limitato a poche richieste concorrenti
@@ -166,6 +168,8 @@ public class BotSchedulerService
             var lastClosedTime = btcClosed.Count > 0 ? btcClosed.Last().Time : (DateTime?)null;
             var lastCloseEnd = lastClosedTime + _timeframeSpan;
             bool newCandle = lastCloseEnd != null && now - lastCloseEnd.Value <= SignalFreshness && _lastScannedCandle != lastClosedTime;
+            cycle.NewCandle = newCandle;
+            cycle.SignalCandleTime = lastClosedTime;
 
             if (!newCandle)
             {
@@ -178,9 +182,11 @@ public class BotSchedulerService
                 var btcBullish = EmaRibbonTrendFollowingStrategy.IsBtcBullish(btcClosed);
                 Console.WriteLine($"🕯️  Candela {_timeframe} chiusa alle {lastCloseEnd:yyyy-MM-dd HH:mm} UTC: ricerca segnali");
                 Console.WriteLine($"₿ Regime BTC: {(btcBullish == null ? "sconosciuto (nessun segnale)" : btcBullish.Value ? "rialzista (solo long)" : "ribassista (solo short)")}");
+                cycle.BtcRegime = btcBullish == null ? "Sconosciuto" : btcBullish.Value ? "Rialzista" : "Ribassista";
 
                 _lastScannedCandle = lastClosedTime;
                 var cryptos = await _dataService.GetLargeCapCryptocurrenciesAsync();
+                cycle.CryptosAnalyzed = cryptos.Count;
                 Console.WriteLine($"📈 Analizzando {cryptos.Count} criptovalute (max 500 per performance)...");
 
                 var allTrades = _reportingService.GetAllTrades();
@@ -297,6 +303,15 @@ public class BotSchedulerService
                 }
             }
 
+            cycle.TradesClosed = tradesClosed;
+            cycle.SignalsFound = signalsFound;
+            cycle.SignalsFiltered = signalsFiltered;
+            cycle.OpenTrades = openTrades.Count;
+            cycle.CapitalCommitted = openTrades.Sum(t => t.EntryPrice * t.PositionSize);
+            cycle.RealizedPnl = _realizedPnl;
+            if (rejectionCounts.Count > 0)
+                cycle.RejectionCounts = Newtonsoft.Json.JsonConvert.SerializeObject(rejectionCounts);
+
             // Report del ciclo
             Console.WriteLine($"\n✅ Ciclo completato:");
             Console.WriteLine($"   • Trade chiusi (stop/target): {tradesClosed}");
@@ -341,9 +356,17 @@ public class BotSchedulerService
         catch (Exception ex)
         {
             Console.WriteLine($"❌ Errore nel controllo del mercato: {ex.Message}");
+            if (cycle != null)
+                cycle.Error = ex.Message;
         }
         finally
         {
+            // Salva il ciclo nella tabella bot1.bot1_cycles (anche se terminato con errore)
+            if (cycle != null)
+            {
+                cycle.EndTime = DateTime.UtcNow;
+                _reportingService.SaveCycle(cycle);
+            }
             Interlocked.Exchange(ref _cycleRunning, 0);
         }
     }
