@@ -8,13 +8,15 @@ public class RiskManager
     // Ogni trade investe un importo fisso in € (positionValue) e non c'è limite al numero di trade aperti.
     private readonly decimal _positionValue;
     private readonly decimal _minRewardRatio;
-    private readonly decimal _commissionsPercent;
+    private readonly decimal _buyCommissionPercent;   // commissione sugli acquisti (%)
+    private readonly decimal _sellCommissionPercent;  // commissione sulle vendite (%)
     private readonly decimal _taxRate;
 
     public RiskManager(
         decimal positionValue,
         decimal rewardRiskRatio = 2.0m,
-        decimal commissionsPercent = 1.0m,
+        decimal buyCommissionPercent = 0.40m,
+        decimal sellCommissionPercent = 0.80m,
         decimal taxRate = 0.26m)
     {
         if (positionValue <= 0)
@@ -22,7 +24,8 @@ public class RiskManager
 
         _positionValue = positionValue;
         _minRewardRatio = rewardRiskRatio;
-        _commissionsPercent = commissionsPercent;
+        _buyCommissionPercent = buyCommissionPercent;
+        _sellCommissionPercent = sellCommissionPercent;
         _taxRate = taxRate;
     }
 
@@ -66,7 +69,7 @@ public class RiskManager
 
         // 4️⃣ Verifica che il profitto atteso copra commissioni
         var expectedProfit = positionSize * profitPerUnit;
-        var commissionsOnTrade = (entryPrice * positionSize * _commissionsPercent / 100) * 2; // Entry + Exit
+        var commissionsOnTrade = entryPrice * positionSize * (_buyCommissionPercent + _sellCommissionPercent) / 100; // un acquisto + una vendita
         var netProfit = expectedProfit - commissionsOnTrade;
 
         if (netProfit <= 0)
@@ -115,9 +118,12 @@ public class RiskManager
         var priceChange = isLong ? exitPrice - entryPrice : entryPrice - exitPrice;
         var profitLoss = priceChange * positionSize;
 
-        // Commissioni (entry + exit)
-        var entryCommission = (entryPrice * positionSize * _commissionsPercent / 100);
-        var exitCommission = (exitPrice * positionSize * _commissionsPercent / 100);
+        // Commissioni: acquisto allo 0,40% (_buyCommissionPercent), vendita allo 0,80% (_sellCommissionPercent).
+        // Per un long l'ingresso è un acquisto e l'uscita una vendita; per uno short è il contrario.
+        var entryRate = isLong ? _buyCommissionPercent : _sellCommissionPercent;
+        var exitRate = isLong ? _sellCommissionPercent : _buyCommissionPercent;
+        var entryCommission = (entryPrice * positionSize * entryRate / 100);
+        var exitCommission = (exitPrice * positionSize * exitRate / 100);
         var totalCommissions = entryCommission + exitCommission;
 
         // Profitto netto prima tasse
@@ -168,7 +174,7 @@ public class RiskManager
         metrics.TotalProfit = closedTrades.Sum(t => t.Profit ?? 0);
         metrics.TotalCommissions = closedTrades.Sum(t =>
         {
-            var commissions = (t.EntryPrice * t.PositionSize * _commissionsPercent / 100) * 2;
+            var commissions = t.EntryPrice * t.PositionSize * (_buyCommissionPercent + _sellCommissionPercent) / 100;
             return commissions;
         });
 

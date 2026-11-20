@@ -99,7 +99,7 @@ async Task RunLiveAsync()
 
     Console.WriteLine("Strategia Principale Attiva:");
     Console.WriteLine("  ⭐ EMA Ribbon Trend Following + Candle Confirmation");
-    Console.WriteLine($"     • Configurazione: EMA 5, 10, 20, 30 su candele {Timeframe}");
+    Console.WriteLine($"     • Configurazione: EMA 2, 3, 10, 30 su candele {Timeframe}");
     Console.WriteLine("     • Filtri: Volume, Candle Body, RSI, Breakout Confirmation, Regime BTC");
     Console.WriteLine("     • Modalità: paper trading (segnali e trade simulati, nessun ordine reale)");
     Console.WriteLine("\nImpostazioni:");

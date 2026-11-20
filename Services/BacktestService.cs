@@ -39,7 +39,8 @@ public class BacktestService
         _riskManager = new RiskManager(
             positionValue: capitalPerTrade,
             rewardRiskRatio: rewardRiskRatio,
-            commissionsPercent: 0.40m,
+            buyCommissionPercent: 0.40m,
+            sellCommissionPercent: 0.80m,
             taxRate: TaxRate
         );
     }
@@ -84,8 +85,12 @@ public class BacktestService
         var historyFrom = startDate - warmup;
         var btcCandles = await _dataService.GetHistoricalCandlesAsync("BTC", timeframe, historyFrom, endDate);
         var btcRegime = new Dictionary<DateTime, bool?>();
+        var btcTrending = new Dictionary<DateTime, bool?>();
         for (int i = 0; i < btcCandles.Count; i++)
+        {
             btcRegime[btcCandles[i].Time] = EmaRibbonTrendFollowingStrategy.IsBtcBullish(Window(btcCandles, i));
+            btcTrending[btcCandles[i].Time] = EmaRibbonTrendFollowingStrategy.IsBtcTrending(Window(btcCandles, i));
+        }
 
         // 1) Scarica tutte le candele prima di simulare: il portafoglio va simulato in ordine cronologico
         //    su tutti i simboli insieme, per sapere in ogni momento quanto capitale è impegnato.
@@ -169,7 +174,7 @@ public class BacktestService
                     if (openPositions.ContainsKey(symbol) || !indexBySymbol[symbol].TryGetValue(time, out var idx) || idx < WarmupCandles)
                         continue;
 
-                    var analysis = _strategy.Analyze(symbol, Window(candles, idx), btcRegime.GetValueOrDefault(time));
+                    var analysis = _strategy.Analyze(symbol, Window(candles, idx), btcRegime.GetValueOrDefault(time), btcTrending.GetValueOrDefault(time));
                     if (analysis.IsSignal)
                         candidates.Add((symbol, candles[idx], analysis));
                 }

@@ -46,7 +46,8 @@ public class BotSchedulerService
         _riskManager = new RiskManager(
             positionValue: capitalPerTrade,   // importo fisso per trade (€)
             rewardRiskRatio: rewardRiskRatio, // take profit = R:R × distanza dello stop
-            commissionsPercent: 0.40m,        // 0.40% commissioni (Kraken Pro livello 1, taker) per lato
+            buyCommissionPercent: 0.40m,   // 0,40% commissione sugli acquisti (Kraken Pro, ordini limit/maker)
+            sellCommissionPercent: 0.80m,  // 0,80% commissione sulle vendite (Kraken Pro, ordini a mercato/taker)
             taxRate: 0.26m                    // 26% tasse
         );
     }
@@ -180,6 +181,7 @@ public class BotSchedulerService
             {
                 // Regime di mercato BTC sulla candela appena chiusa (filtro direzionale della strategia)
                 var btcBullish = EmaRibbonTrendFollowingStrategy.IsBtcBullish(btcClosed);
+                var btcTrending = EmaRibbonTrendFollowingStrategy.IsBtcTrending(btcClosed);
                 Console.WriteLine($"🕯️  Candela {_timeframe} chiusa alle {lastCloseEnd:yyyy-MM-dd HH:mm} UTC: ricerca segnali");
                 Console.WriteLine($"₿ Regime BTC: {(btcBullish == null ? "sconosciuto (nessun segnale)" : btcBullish.Value ? "rialzista (solo long)" : "ribassista (solo short)")}");
                 cycle.BtcRegime = btcBullish == null ? "Sconosciuto" : btcBullish.Value ? "Rialzista" : "Ribassista";
@@ -229,7 +231,7 @@ public class BotSchedulerService
                         }
 
                         // ✅ STRATEGIA PRINCIPALE: EMA Ribbon Trend Following + Candle Confirmation
-                        var emaRibbonResult = _emaRibbonStrategy.Analyze(crypto.Symbol, candles, btcBullish);
+                        var emaRibbonResult = _emaRibbonStrategy.Analyze(crypto.Symbol, candles, btcBullish, btcTrending);
 
                         if (emaRibbonResult.IsSignal)
                             candidates.Add((crypto, emaRibbonResult, candles));

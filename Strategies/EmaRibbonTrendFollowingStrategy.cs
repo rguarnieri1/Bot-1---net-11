@@ -4,15 +4,23 @@ namespace BotCripto.Strategies;
 
 public class EmaRibbonTrendFollowingStrategy
 {
-    // Configurazione ottimizzata per win rate 60-62%
-    private readonly int[] _emaPeriods = { 5, 10, 20, 30 };
-    private readonly decimal _volumeMultiplierThreshold = 1.5m;  // Volume almeno 50% sopra media
-    private const int BtcRegimeEmaPeriod = 50;
-    private readonly decimal _bodyStrengthThreshold = 0.6m;      // Corpo deve essere 60% della candela
-    private const decimal RsiOverextendedHigh = 85m; // niente long oltre questo RSI
-    private const decimal RsiOverextendedLow = 15m;  // niente short sotto questo RSI
+    // Configurazione "B" scelta dall'ottimizzazione su 4 anni di dati (candele 6h):
+    // i periodi sono ordinati dalla EMA più veloce alla più lenta (negli Indicators restano le chiavi EMA5/10/20/30:
+    // indicano rispettivamente la 1ª, 2ª, 3ª e 4ª EMA del ribbon).
+    private readonly int[] _emaPeriods = { 2, 3, 10, 30 };
+    private readonly decimal _volumeMultiplierThreshold = 3.0m;  // Volume almeno 3x la media delle ultime 20 candele
+    private const int BtcRegimeEmaPeriod = 20;
+    private readonly decimal _bodyStrengthThreshold = 0.4m;      // Corpo almeno 40% della candela
+    private const decimal RsiOverextendedHigh = 70m; // niente long oltre questo RSI
+    private const decimal RsiOverextendedLow = 30m;  // niente short sotto questo RSI
+    private const decimal StopBuffer = 0.015m;       // stop 1,5% oltre EMA/estremo della candela
 
-    // Regime di mercato: true se BTC chiude sopra la sua EMA50 sull'ultima candela, false se sotto,
+    // Filtro "mercato laterale": il prezzo di BTC deve essere almeno il 3% lontano dalla sua EMA a 5 periodi
+    // (in valore assoluto): se BTC resta attaccato alla media il mercato è laterale e non si opera.
+    private const int BtcTrendEmaPeriod = 5;
+    private const decimal BtcMinDistanceFromEma = 0.03m;
+
+    // Regime di mercato: true se BTC chiude sopra la sua EMA20 sull'ultima candela, false se sotto,
     // null se i dati BTC non sono sufficienti.
     public static bool? IsBtcBullish(List<Candle> btcCandles)
     {
@@ -22,9 +30,20 @@ public class EmaRibbonTrendFollowingStrategy
         return btcCandles.Last().Close > ema.Last();
     }
 
+    // Filtro mercato laterale: true se BTC è abbastanza "mosso" da operare, false se laterale,
+    // null se i dati BTC non sono sufficienti.
+    public static bool? IsBtcTrending(List<Candle> btcCandles)
+    {
+        var ema = TechnicalIndicators.CalculateEMA(btcCandles.Select(c => c.Close).ToList(), BtcTrendEmaPeriod);
+        if (ema.Count == 0 || ema.Last() <= 0)
+            return null;
+        return Math.Abs(btcCandles.Last().Close - ema.Last()) / ema.Last() >= BtcMinDistanceFromEma;
+    }
+
     // btcBullish: regime BTC (vedi IsBtcBullish). Long solo con BTC rialzista, short solo con BTC ribassista;
     // se il regime è sconosciuto (null) il segnale viene scartato.
-    public AnalysisResult Analyze(string symbol, List<Candle> candles, bool? btcBullish)
+    // btcTrending: filtro mercato laterale (vedi IsBtcTrending); se BTC è laterale o sconosciuto il segnale viene scartato.
+    public AnalysisResult Analyze(string symbol, List<Candle> candles, bool? btcBullish, bool? btcTrending)
     {
         var result = new AnalysisResult
         {
@@ -61,10 +80,10 @@ public class EmaRibbonTrendFollowingStrategy
         }
 
         var currentPrice = closes.Last();
-        var lastEma5 = emaRibbon[5].Last();
-        var lastEma10 = emaRibbon[10].Last();
-        var lastEma20 = emaRibbon[20].Last();
-        var lastEma30 = emaRibbon[30].Last();
+        var lastEma5 = emaRibbon[_emaPeriods[0]].Last();   // EMA più veloce
+        var lastEma10 = emaRibbon[_emaPeriods[1]].Last();
+        var lastEma20 = emaRibbon[_emaPeriods[2]].Last();  // usata anche per lo stop
+        var lastEma30 = emaRibbon[_emaPeriods[3]].Last();  // EMA più lenta
 
         result.Indicators["EMA5"] = lastEma5;
         result.Indicators["EMA10"] = lastEma10;
@@ -228,18 +247,26 @@ public class EmaRibbonTrendFollowingStrategy
             return result;
         }
 
+        // 8️⃣ SIDEWAYS FILTER - niente operazioni quando BTC è in fase laterale
+        if (btcTrending != true)
+        {
+            result.Signal = "Rejected - BTC sideways (close within 3% of EMA5)";
+            result.Rejection = RejectionReason.AgainstBtcRegime;
+            return result;
+        }
+
         // ✅ SIGNAL GENERATED
         if (isUptrendAligned)
         {
             result.IsSignal = true;
             result.Signal = "🟢 BUY - EMA Ribbon Bullish (Trend + Candle + Volume)";
-            result.Indicators["StopLoss"] = Math.Min(lastEma20, lastCandle.Low) * 0.995m;
+            result.Indicators["StopLoss"] = Math.Min(lastEma20, lastCandle.Low) * (1 - StopBuffer);
         }
         else
         {
             result.IsSignal = true;
             result.Signal = "🔴 SELL - EMA Ribbon Bearish (Trend + Candle + Volume)";
-            result.Indicators["StopLoss"] = Math.Max(lastEma20, lastCandle.High) * 1.005m;
+            result.Indicators["StopLoss"] = Math.Max(lastEma20, lastCandle.High) * (1 + StopBuffer);
         }
 
         result.Indicators["SignalStrength"] = Math.Min(1m, bodyStrength + (recentVolume / avgVolume - 1) * 0.5m);
