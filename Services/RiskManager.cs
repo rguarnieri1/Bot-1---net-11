@@ -15,8 +15,8 @@ public class RiskManager
     public RiskManager(
         decimal positionValue,
         decimal rewardRiskRatio = 2.0m,
-        decimal buyCommissionPercent = 0.40m,
-        decimal sellCommissionPercent = 0.80m,
+        decimal buyCommissionPercent = 1.0m,   // 1% commissione di acquisto
+        decimal sellCommissionPercent = 1.0m,  // 1% commissione di vendita
         decimal taxRate = 0.26m)
     {
         if (positionValue <= 0)
@@ -118,7 +118,7 @@ public class RiskManager
         var priceChange = isLong ? exitPrice - entryPrice : entryPrice - exitPrice;
         var profitLoss = priceChange * positionSize;
 
-        // Commissioni: acquisto allo 0,40% (_buyCommissionPercent), vendita allo 0,80% (_sellCommissionPercent).
+        // Commissioni: acquisto all'1% (_buyCommissionPercent), vendita all'1% (_sellCommissionPercent).
         // Per un long l'ingresso è un acquisto e l'uscita una vendita; per uno short è il contrario.
         var entryRate = isLong ? _buyCommissionPercent : _sellCommissionPercent;
         var exitRate = isLong ? _sellCommissionPercent : _buyCommissionPercent;

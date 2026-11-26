@@ -46,8 +46,8 @@ public class BotSchedulerService
         _riskManager = new RiskManager(
             positionValue: capitalPerTrade,   // importo fisso per trade (€)
             rewardRiskRatio: rewardRiskRatio, // take profit = R:R × distanza dello stop
-            buyCommissionPercent: 0.40m,   // 0,40% commissione sugli acquisti (Kraken Pro, ordini limit/maker)
-            sellCommissionPercent: 0.80m,  // 0,80% commissione sulle vendite (Kraken Pro, ordini a mercato/taker)
+            buyCommissionPercent: 1.0m,   // 1% commissione di acquisto
+            sellCommissionPercent: 1.0m,  // 1% commissione di vendita
             taxRate: 0.26m                    // 26% tasse
         );
     }
